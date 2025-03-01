@@ -1,60 +1,29 @@
-import { Text, type TextProps, StyleSheet } from 'react-native';
+import { Text, type TextProps } from 'react-native';
 
-import { useThemeColor } from '@/hooks/useThemeColor';
+export type textEnum = 'text' | 'text-small' | 'title' | 'heading' | 'subtitle' | 'text-semiBold' | 'text-medium' | 'text-medium-base' | 'text-medium-gray' | 'link' | 'link-semiBold' | 'empty';
 
 export type ThemedTextProps = TextProps & {
-  lightColor?: string;
-  darkColor?: string;
-  type?: 'default' | 'title' | 'defaultSemiBold' | 'subtitle' | 'link';
+  type?: textEnum;
+  className?: string;
 };
 
-export function ThemedText({
-  style,
-  lightColor,
-  darkColor,
-  type = 'default',
-  ...rest
-}: ThemedTextProps) {
-  const color = useThemeColor({ light: lightColor, dark: darkColor }, 'text');
-
+export function ThemedText({ type = 'text', className = '', ...rest }: ThemedTextProps) {
   return (
-    <Text
-      style={[
-        { color },
-        type === 'default' ? styles.default : undefined,
-        type === 'title' ? styles.title : undefined,
-        type === 'defaultSemiBold' ? styles.defaultSemiBold : undefined,
-        type === 'subtitle' ? styles.subtitle : undefined,
-        type === 'link' ? styles.link : undefined,
-        style,
-      ]}
-      {...rest}
-    />
+      <Text
+          className={`leading-[1.275]
+        ${type === 'title' ? 'text-[22px] font-Onest-Bold text-black' : ''}
+        ${type === 'subtitle' ? 'text-base font-Onest-Bold text-black-950' : ''}
+        ${type === 'text-medium' ? 'text-sm font-Onest-Medium text-black-950' : ''}
+        ${type === 'text-medium-gray' ? 'text-sm font-Onest-Medium text-black-200' : ''}
+        ${type === 'text-medium-base' ? 'text-base font-Onest-Medium text-black-950' : ''}
+        ${type === 'text' ? 'text-sm font-Onest text-gray-600' : ''}
+        ${type === 'text-small' ? 'text-xs font-Onest text-gray-600' : ''}
+        ${type === 'text-semiBold' ? 'text-sm font-Onest-SemiBold text-white-950' : ''}
+        ${type === 'link' ? 'text-sm font-Onest text-accent-950' : ''}
+        ${type === 'link-semiBold' ? 'text-sm font-Onest-SemiBold text-accent-950' : ''}
+        ${type === 'empty' ? '' : ''}
+        ${className}`}
+          {...rest}
+      />
   );
 }
-
-const styles = StyleSheet.create({
-  default: {
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  defaultSemiBold: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontWeight: '600',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    lineHeight: 32,
-  },
-  subtitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  link: {
-    lineHeight: 30,
-    fontSize: 16,
-    color: '#0a7ea4',
-  },
-});
