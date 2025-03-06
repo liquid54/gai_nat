@@ -48,7 +48,7 @@ export const STT_LANGUAGE_LIST: LanguageOption[] = [
     { label: 'Ukrainian', value: 'uk', key: 'uk' },
 ];
 
-export const AVATARS: AvatarOption[] = [
+export  const AVATARS: AvatarOption[] = [
     {
         avatar_id: "Anna_public_3_20240108",
         name: "Anna in Brown T-shirt",
