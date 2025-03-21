@@ -124,6 +124,14 @@ android {
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
     }
+
+    // Додано для вирішення конфлікту WebRTC залежностей
+    configurations.all {
+        resolutionStrategy {
+            // Виключаємо старішу версію WebRTC
+            exclude group: 'org.jitsi', module: 'webrtc'
+        }
+    }
 }
 
 // Apply static values from `gradle.properties` to the `android.packagingOptions`
@@ -173,4 +181,7 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // Якщо потрібно, явно додайте новішу версію WebRTC
+    implementation 'io.github.webrtc-sdk:android:125.6422.04'
 }

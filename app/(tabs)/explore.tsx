@@ -24,7 +24,7 @@ import {Track} from "livekit-client";
 import {Audio} from "expo-av";
 import * as FileSystem from 'expo-file-system';
 import CustomSelect from "@/features/chat/CustomSelect";
-import {STT_LANGUAGE_LIST, AVATARS} from "./constants";
+import {STT_LANGUAGE_LIST, AVATARS} from "@/features/chat/constants";
 
 registerGlobals();
 
