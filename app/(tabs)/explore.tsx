@@ -19,6 +19,7 @@ import {
     VideoTrack,
     useTracks,
     isTrackReference,
+    useLocalParticipant,
 } from "@livekit/react-native";
 import {Track} from "livekit-client";
 import {Audio} from "expo-av";
@@ -29,7 +30,7 @@ import {STT_LANGUAGE_LIST, AVATARS} from "@/features/chat/constants";
 registerGlobals();
 
 const API_CONFIG = {
-    apiKey: "NWVhNWVhZDQ3OGZlNDU4ZjlhZmViMzY3YjdiMzhkODYtMTc0MjQ3NTY1NA==",
+    apiKey: "MDZmNjQ2ZTllY2Y0NDVhYmFiOGU3YjU0ZDY2ZDhmODMtMTc0MTAyOTM1OA==",
     serverUrl: "https://api.heygen.com",
     openaiApiKey: "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", // Замініть своїм ключем API OpenAI
 };
@@ -47,12 +48,23 @@ const Explore = () => {
 
     // Voice mode state
     const [isVoiceMode, setIsVoiceMode] = useState(false);
-    const [isRecording, setIsRecording] = useState(false);
     const [transcribedText, setTranscribedText] = useState("");
     const [recordingStatus, setRecordingStatus] = useState<"idle" | "recording" | "processing">("idle");
 
     // Референції для запису
     const recording = useRef<Audio.Recording | null>(null);
+    const speakingTimer = useRef<NodeJS.Timeout | null>(null); // Таймер для контролю тривалості мовлення
+    const cycleTimeout = useRef<NodeJS.Timeout | null>(null); // Таймер для циклічного запису
+
+    // Стани для циклічного запису
+    const isRecordingCycle = useRef(false); // Чи активний цикл запису
+    const isProcessingRecording = useRef(false); // Чи обробляється запис зараз
+
+    // Стан для відстеження останніх відповідей аватара (для фільтрації ехо)
+    const [avatarResponses, setAvatarResponses] = useState<string[]>([]);
+
+    // Тривалість запису (в мілісекундах)
+    const RECORDING_DURATION = 5000; // 4 секунди
 
     // choose language and avatar
     const [selectedLanguage, setSelectedLanguage] = useState<string>("en");
@@ -80,20 +92,31 @@ const Explore = () => {
 
         setupAudio();
         return () => {
-            // Зупиняємо запис, якщо він активний
-            if (recording.current) {
-                try {
-                    recording.current.stopAndUnloadAsync();
-                } catch (error) {
-                    console.log("Error cleaning recording:", error);
-                }
-                recording.current = null;
+            // Очищаємо все при виході
+            console.log("Main component unmounting - cleaning up");
+            stopRecordingCycle();
+
+            // Очищаємо таймер мовлення при розмонтуванні
+            if (speakingTimer.current) {
+                clearTimeout(speakingTimer.current);
+                speakingTimer.current = null;
             }
 
             // Зупиняємо аудіо сесію
             AudioSession.stopAudioSession();
         };
     }, []);
+
+    // Ефект для керування циклом запису
+    useEffect(() => {
+        if (isVoiceMode && !speaking) {
+            // Якщо голосовий режим активний і аватар не говорить, запускаємо цикл запису
+            startRecordingCycle();
+        } else {
+            // Інакше зупиняємо цикл
+            stopRecordingCycle();
+        }
+    }, [isVoiceMode, speaking]);
 
     // default avatar selection
     useEffect(() => {
@@ -229,7 +252,17 @@ const Explore = () => {
         try {
             if (!textToSend.trim()) return;
 
+            // Встановлюємо флаг, що аватар говорить
             setSpeaking(true);
+            console.log("Avatar started speaking - setting speaking flag to true");
+
+            // Зберігаємо текст, який був надісланий аватару
+            // Це допоможе нам пізніше фільтрувати ехо
+            setAvatarResponses(prev => {
+                const newResponses = [...prev, textToSend.toLowerCase().trim()];
+                // Зберігаємо тільки останні 5 відповідей
+                return newResponses.slice(-5);
+            });
 
             // Send task request
             const response = await fetch(
@@ -250,13 +283,257 @@ const Explore = () => {
 
             const data = await response.json();
             console.log("Task response:", data);
+
+            // Очищаємо попередній таймер, якщо він є
+            if (speakingTimer.current) {
+                clearTimeout(speakingTimer.current);
+                speakingTimer.current = null;
+            }
+
+            // Отримуємо тривалість відповіді
+            const durationMs = data?.data?.duration_ms || 0;
+            console.log(`Avatar will speak for ${durationMs} ms`);
+
+            if (durationMs > 0) {
+                // Встановлюємо таймер, щоб вимкнути флаг speaking після завершення відповіді
+                // Додаємо 500 мс буфер для безпеки
+                speakingTimer.current = setTimeout(() => {
+                    console.log("Speaking timer completed - avatar should be done speaking");
+                    setSpeaking(false);
+                }, durationMs + 500);
+            } else {
+                // Якщо не отримали тривалість, одразу знімаємо флаг
+                setSpeaking(false);
+            }
+
             setText(""); // Clear input after sending
             setTranscribedText(""); // Clear transcribed text as well
         } catch (error) {
             console.error("Error sending text:", error);
-        } finally {
+            // У випадку помилки знімаємо флаг
             setSpeaking(false);
         }
+    };
+
+    // Функція для перевірки, чи розпізнаний текст схожий на останні відповіді
+    const isLikelyEcho = (text: string): boolean => {
+        if (!text || avatarResponses.length === 0) return false;
+
+        const normalizedText = text.toLowerCase().trim();
+        console.log("Checking if text is echo:", normalizedText);
+        console.log("Avatar responses:", avatarResponses);
+
+        // Перевіряємо, чи текст співпадає з нещодавніми відповідями аватара
+        for (const response of avatarResponses) {
+            // Точне співпадіння
+            if (normalizedText === response) {
+                console.log("Echo detected - exact match");
+                return true;
+            }
+
+            // Часткове співпадіння (якщо розпізнано частину фрази)
+            if (response.includes(normalizedText) || normalizedText.includes(response)) {
+                // Якщо довжина співпадіння більше 60% від оригіналу
+                const similarity = Math.min(
+                    normalizedText.length / response.length,
+                    response.length / normalizedText.length
+                );
+
+                if (similarity > 0.6) {
+                    console.log(`Echo detected - partial match with similarity ${similarity.toFixed(2)}`);
+                    return true;
+                }
+            }
+
+            // Перевірка на схожі слова
+            const responseWords = response.split(/\s+/);
+            const transcriptWords = normalizedText.split(/\s+/);
+
+            // Якщо більше 70% слів співпадають
+            const commonWords = responseWords.filter(word =>
+                transcriptWords.some(tWord =>
+                    tWord === word || (tWord.length > 3 && word.length > 3 && (tWord.includes(word) || word.includes(tWord)))
+                )
+            );
+
+            if (commonWords.length > 0) {
+                const wordSimilarity = commonWords.length / Math.max(responseWords.length, transcriptWords.length);
+                if (wordSimilarity > 0.7) {
+                    console.log(`Echo detected - word similarity ${wordSimilarity.toFixed(2)}`);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    };
+
+    // ===== ЦИКЛІЧНИЙ ЗАПИС =====
+
+    // Функція для запуску циклу запису
+    const startRecordingCycle = async () => {
+        if (isRecordingCycle.current || speaking) {
+            console.log("Cannot start recording cycle: already active or avatar is speaking");
+            return;
+        }
+
+        isRecordingCycle.current = true;
+        console.log("Starting recording cycle");
+
+        // Запускаємо перший запис
+        startNextRecording();
+    };
+
+    // Функція для зупинки циклу запису
+    const stopRecordingCycle = async () => {
+        isRecordingCycle.current = false;
+        console.log("Stopping recording cycle");
+
+        // Зупиняємо поточний запис, якщо він є
+        if (recording.current) {
+            try {
+                await recording.current.stopAndUnloadAsync();
+            } catch (error) {
+                console.log("Error stopping recording:", error);
+            }
+            recording.current = null;
+        }
+
+        // Очищаємо таймер циклу
+        if (cycleTimeout.current) {
+            clearTimeout(cycleTimeout.current);
+            cycleTimeout.current = null;
+        }
+
+        setRecordingStatus("idle");
+    };
+
+    // Функція для запуску нового запису в циклі
+    const startNextRecording = async () => {
+        // Якщо цикл не активний або аватар говорить, не починаємо новий запис
+        if (!isRecordingCycle.current || speaking || isProcessingRecording.current) {
+            console.log("Skipping recording start: cycle inactive, avatar speaking, or processing in progress");
+            return;
+        }
+
+        try {
+            // Зупиняємо попередній запис, якщо він є
+            if (recording.current) {
+                try {
+                    await recording.current.stopAndUnloadAsync();
+                } catch (error) {
+                    console.log("Error stopping previous recording:", error);
+                }
+                recording.current = null;
+            }
+
+            console.log("Starting new recording in cycle");
+            setRecordingStatus("recording");
+
+            // Налаштування для запису
+            const options = {
+                android: {
+                    extension: '.m4a',
+                    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+                    audioEncoder: Audio.AndroidAudioEncoder.AAC,
+                    sampleRate: 16000,
+                    numberOfChannels: 1,
+                    bitRate: 32000,
+                },
+                ios: Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
+                web: {
+                    mimeType: 'audio/webm',
+                    bitsPerSecond: 128000,
+                },
+            };
+
+            // Створюємо новий запис
+            const { recording: newRecording } = await Audio.Recording.createAsync(options);
+            recording.current = newRecording;
+
+            // Встановлюємо таймер на завершення запису
+            cycleTimeout.current = setTimeout(async () => {
+                await processRecording();
+            }, RECORDING_DURATION);
+
+        } catch (error) {
+            console.error("Error starting recording in cycle:", error);
+            setRecordingStatus("idle");
+
+            // Якщо сталася помилка, спробуємо перезапустити цикл через деякий час
+            setTimeout(() => {
+                if (isRecordingCycle.current && !speaking) {
+                    startNextRecording();
+                }
+            }, 1000);
+        }
+    };
+
+    // Функція для обробки запису в циклі
+    const processRecording = async () => {
+        // Якщо немає запису або аватар почав говорити, пропускаємо обробку
+        if (!recording.current || speaking || !isRecordingCycle.current) {
+            console.log("Skipping recording processing: no recording, avatar speaking, or cycle inactive");
+
+            // Якщо цикл все ще активний і аватар не говорить, запускаємо новий запис
+            if (isRecordingCycle.current && !speaking) {
+                startNextRecording();
+            }
+
+            return;
+        }
+
+        // Встановлюємо флаг обробки, щоб уникнути паралельних обробок
+        isProcessingRecording.current = true;
+        setRecordingStatus("processing");
+
+        try {
+            console.log("Processing recording in cycle");
+
+            // Зупиняємо поточний запис
+            await recording.current.stopAndUnloadAsync();
+            const uri = recording.current.getURI();
+            recording.current = null;
+
+            // Якщо цикл все ще активний і аватар не говорить, запускаємо новий запис
+            // Це забезпечує безперервність запису
+            if (isRecordingCycle.current && !speaking) {
+                startNextRecording();
+            }
+
+            if (!uri) {
+                console.log("No URI obtained from recording");
+                isProcessingRecording.current = false;
+                setRecordingStatus(isRecordingCycle.current && !speaking ? "recording" : "idle");
+                return;
+            }
+
+            // Отримуємо інформацію про файл
+            const fileInfo = await FileSystem.getInfoAsync(uri);
+
+            if (!fileInfo.exists || !fileInfo.size || fileInfo.size <= 1000) {
+                console.log("Audio file is too small or does not exist");
+                isProcessingRecording.current = false;
+                setRecordingStatus(isRecordingCycle.current && !speaking ? "recording" : "idle");
+                return;
+            }
+
+            console.log("Audio file size:", `${(fileInfo.size / 1024).toFixed(2)} KB`);
+
+            // Відправляємо на транскрипцію
+            await transcribeAudioWithOpenAI(uri);
+
+        } catch (error) {
+            console.error("Error processing recording in cycle:", error);
+        } finally {
+            isProcessingRecording.current = false;
+            setRecordingStatus(isRecordingCycle.current && !speaking ? "recording" : "idle");
+        }
+    };
+
+    // Toggle voice mode
+    const toggleVoiceMode = () => {
+        setIsVoiceMode(!isVoiceMode);
     };
 
     const closeSession = async () => {
@@ -267,14 +544,14 @@ const Explore = () => {
                 return;
             }
 
-            // Зупиняємо запис
-            if (recording.current) {
-                try {
-                    await recording.current.stopAndUnloadAsync();
-                } catch (error) {
-                    console.error("Error stopping recording:", error);
-                }
-                recording.current = null;
+            // Вимикаємо голосовий режим і зупиняємо запис
+            setIsVoiceMode(false);
+            stopRecordingCycle();
+
+            // Очищаємо таймер мовлення
+            if (speakingTimer.current) {
+                clearTimeout(speakingTimer.current);
+                speakingTimer.current = null;
             }
 
             const response = await fetch(
@@ -305,9 +582,8 @@ const Explore = () => {
             setToken("");
             setText("");
             setSpeaking(false);
-            setIsRecording(false);
             setTranscribedText("");
-            setRecordingStatus("idle");
+            setAvatarResponses([]);  // Очищаємо історію відповідей
 
             console.log("Session closed successfully");
         } catch (error) {
@@ -317,103 +593,14 @@ const Explore = () => {
         }
     };
 
-    // Voice mode functions
-    const startRecording = async () => {
-        try {
-            // Видаляємо попередній запис, якщо він є
-            if (recording.current) {
-                try {
-                    await recording.current.stopAndUnloadAsync();
-                } catch (error) {
-                    console.log("Error with previous recording:", error);
-                }
-                recording.current = null;
-            }
-
-            // Тепер створюємо новий запис
-            const options = {
-                android: {
-                    extension: '.m4a',
-                    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-                    audioEncoder: Audio.AndroidAudioEncoder.AAC,
-                    sampleRate: 16000,
-                    numberOfChannels: 1,
-                    bitRate: 32000,
-                },
-                ios: Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
-                web: {
-                    mimeType: 'audio/webm',
-                    bitsPerSecond: 128000,
-                },
-            };
-
-            const { recording: newRecording } = await Audio.Recording.createAsync(options);
-
-            recording.current = newRecording;
-            setIsRecording(true);
-            setRecordingStatus("recording");
-            console.log("Recording started");
-        } catch (error) {
-            console.error("Failed to start recording:", error);
-            setIsRecording(false);
-            setRecordingStatus("idle");
-        }
-    };
-
-    const stopRecording = async () => {
-        if (!recording.current) return;
-
-        try {
-            setIsRecording(false);
-            setRecordingStatus("processing");
-            console.log("Recording stopped, processing...");
-
-            let uri = null;
-
-            try {
-                // Перевіряємо стан запису перед спробою зупинки
-                const status = await recording.current.getStatusAsync();
-                if (status.canRecord) {
-                    await recording.current.stopAndUnloadAsync();
-                    uri = recording.current.getURI();
-                }
-            } catch (error) {
-                console.log("Error stopping recording:", error);
-            }
-
-            // Якщо uri нема, спробуємо отримати його іншим способом
-            if (!uri && recording.current) {
-                uri = recording.current.getURI();
-            }
-
-            // Очищаємо поточний запис
-            recording.current = null;
-
-            if (uri) {
-                // Отримуємо інформацію про файл
-                const fileInfo = await FileSystem.getInfoAsync(uri);
-                if (fileInfo.exists && fileInfo.size) {
-                    console.log("Audio file size:", `${(fileInfo.size / 1024).toFixed(2)} KB`);
-                } else {
-                    console.log("Audio file size: unknown");
-                }
-
-                // Розпізнаємо мовлення
-                await transcribeAudioWithOpenAI(uri);
-            } else {
-                console.error("Recording URI is null");
-                setRecordingStatus("idle");
-            }
-        } catch (error) {
-            console.error("Failed to stop recording:", error);
-            setRecordingStatus("idle");
-            // Очищаємо поточний запис при помилці
-            recording.current = null;
-        }
-    };
-
     const transcribeAudioWithOpenAI = async (audioUri: string) => {
         try {
+            // Якщо аватар почав говорити, пропускаємо транскрипцію
+            if (speaking) {
+                console.log("Avatar is speaking, skipping transcription");
+                return;
+            }
+
             // Створюємо формдату для відправки
             const formData = new FormData();
             formData.append('file', {
@@ -443,35 +630,42 @@ const Explore = () => {
             const data = await response.json();
             console.log("Transcription result:", data);
 
+            // Перевіряємо знову, чи аватар не почав говорити під час запиту
+            if (speaking) {
+                console.log("Avatar started speaking during transcription, skipping");
+                return;
+            }
+
             if (data?.text) {
                 const recognizedText = data.text.trim();
+
+                // Якщо текст порожній, пропускаємо
+                if (!recognizedText) {
+                    console.log("Empty transcription result");
+                    return;
+                }
+
+                // Перевіряємо, чи це не ехо від аватара
+                if (isLikelyEcho(recognizedText)) {
+                    console.log("Detected echo, ignoring: ", recognizedText);
+                    return; // Не обробляємо ехо
+                }
+
                 setTranscribedText(recognizedText);
 
-                // Автоматично відправляємо розпізнаний текст
-                if (recognizedText) {
-                    await sendText(recognizedText);
-                } else {
-                    console.log("Empty transcription result");
-                }
+                // Відправляємо текст аватару
+                await sendText(recognizedText);
             } else {
                 console.log("Invalid transcription result format");
             }
         } catch (error) {
             console.error("Error transcribing audio with OpenAI:", error);
-            alert("Помилка розпізнавання голосу. Спробуйте ще раз.");
-        } finally {
-            setRecordingStatus("idle");
         }
     };
 
-    // Toggle voice mode
-    const toggleVoiceMode = () => {
-        if (isVoiceMode && isRecording) {
-            stopRecording();
-        }
-
-        setIsVoiceMode(!isVoiceMode);
-        console.log(`Switched to ${!isVoiceMode ? 'voice' : 'text'} mode`);
+    // Функція для ініціалізації LiveKit Room
+    const handleRoomInit = () => {
+        console.log("LiveKit Room initialized");
     };
 
     if (!connected) {
@@ -529,9 +723,15 @@ const Explore = () => {
                     noiseSuppression: true,
                     autoGainControl: true
                 },
+                publishDefaults: {
+                    dtx: true,
+                    red: true,
+                },
             }}
-            audio={false}
+            // Вмикаємо мікрофон лише коли ми в голосовому режимі і аватар не говорить
+            audio={isVoiceMode && !speaking}
             video={false}
+            onConnected={handleRoomInit}
         >
             <RoomView
                 onSendText={sendText}
@@ -542,9 +742,6 @@ const Explore = () => {
                 loading={loading}
                 isVoiceMode={isVoiceMode}
                 toggleVoiceMode={toggleVoiceMode}
-                startRecording={startRecording}
-                stopRecording={stopRecording}
-                isRecording={isRecording}
                 recordingStatus={recordingStatus}
                 transcribedText={transcribedText}
             />
@@ -563,9 +760,6 @@ const RoomView = ({
                       loading,
                       isVoiceMode,
                       toggleVoiceMode,
-                      startRecording,
-                      stopRecording,
-                      isRecording,
                       recordingStatus,
                       transcribedText,
                   }: {
@@ -577,13 +771,14 @@ const RoomView = ({
     loading: boolean;
     isVoiceMode: boolean;
     toggleVoiceMode: () => void;
-    startRecording: () => Promise<void>;
-    stopRecording: () => Promise<void>;
-    isRecording: boolean;
     recordingStatus: "idle" | "recording" | "processing";
     transcribedText: string;
 }) => {
     const tracks = useTracks([Track.Source.Camera], {onlySubscribed: true});
+    const { localParticipant } = useLocalParticipant();
+
+    // Відображаємо стан мікрофона для налагодження
+    const microphoneEnabled = localParticipant?.isMicrophoneEnabled;
 
     return (
         <SafeAreaView style={styles.container}>
@@ -628,6 +823,13 @@ const RoomView = ({
                     </View>
                 </View>
 
+                {/* Додаємо індикатор стану мікрофона для налагодження */}
+                <View style={styles.micStatusContainer}>
+                    <Text style={styles.micStatusText}>
+                        Mic: {microphoneEnabled ? "ON" : "OFF"}
+                    </Text>
+                </View>
+
                 {/* Відображення транскрибованого тексту */}
                 {transcribedText ? (
                     <View style={styles.transcriptionContainer}>
@@ -639,24 +841,23 @@ const RoomView = ({
                 <View style={styles.controls}>
                     {isVoiceMode ? (
                         // Voice mode
-                        <TouchableOpacity
-                            style={[
-                                styles.voiceButton,
-                                isRecording && styles.recordingButton,
-                                (speaking || recordingStatus === "processing") && styles.disabledButton
-                            ]}
-                            onPress={isRecording ? stopRecording : startRecording}
-                            disabled={speaking || recordingStatus === "processing"}
-                            activeOpacity={0.7}
-                        >
-                            {recordingStatus === "processing" ? (
-                                <ActivityIndicator size="small" color="#FFFFFF"/>
-                            ) : (
-                                <Text style={styles.voiceButtonText}>
-                                    {isRecording ? "Stop Recording" : "Press to Record"}
-                                </Text>
-                            )}
-                        </TouchableOpacity>
+                        <View style={styles.voiceIndicator}>
+                            <View style={[
+                                styles.recordingIndicator,
+                                isVoiceMode && !speaking && recordingStatus === "recording" && styles.activeRecordingIndicator,
+                                isVoiceMode && !speaking && recordingStatus === "processing" && styles.processingRecordingIndicator,
+                                isVoiceMode && speaking && styles.pausedRecordingIndicator
+                            ]} />
+                            <Text style={styles.voiceStatusText}>
+                                {recordingStatus === "processing"
+                                    ? "Розпізнавання голосу..."
+                                    : speaking
+                                        ? "Аватар говорить - мікрофон вимкнено"
+                                        : recordingStatus === "recording"
+                                            ? "Запис голосу..."
+                                            : "Голосовий режим активний"}
+                            </Text>
+                        </View>
                     ) : (
                         // Text mode
                         <View style={styles.inputContainer}>
@@ -722,10 +923,18 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
     startButton: {
-        borderColor: 'green',
+        backgroundColor: "#1a73e8",
+        paddingVertical: 12,
+        paddingHorizontal: 24,
+        borderRadius: 25,
+        elevation: 3,
+        shadowColor: "#000",
+        shadowOffset: {width: 0, height: 2},
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
     },
     startButtonText: {
-        color: "#1a73e8",
+        color: "black",
         fontSize: 18,
         fontWeight: "600",
     },
@@ -819,26 +1028,6 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: "600",
     },
-    voiceButton: {
-        backgroundColor: "#2196F3",
-        paddingVertical: 15,
-        borderRadius: 30,
-        alignItems: "center",
-        justifyContent: "center",
-        elevation: 3,
-        shadowColor: "#000",
-        shadowOffset: {width: 0, height: 2},
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-    },
-    recordingButton: {
-        backgroundColor: "#ff4444",
-    },
-    voiceButtonText: {
-        color: "white",
-        fontSize: 16,
-        fontWeight: "600",
-    },
     disabledButton: {
         opacity: 0.5,
     },
@@ -862,5 +1051,51 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: "#000",
         fontWeight: "500",
+    },
+    // Стилі для індикатора
+    voiceIndicator: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(240, 240, 240, 0.8)',
+        padding: 15,
+        borderRadius: 30,
+        justifyContent: 'center',
+    },
+    recordingIndicator: {
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        backgroundColor: '#cccccc',
+        marginRight: 10,
+    },
+    activeRecordingIndicator: {
+        backgroundColor: '#ff4444',  // Червоний для активного запису
+    },
+    processingRecordingIndicator: {
+        backgroundColor: '#3366ff', // Синій для обробки
+    },
+    pausedRecordingIndicator: {
+        backgroundColor: '#ffaa00',  // Жовтий для паузи
+    },
+    voiceStatusText: {
+        fontSize: 16,
+        color: '#333',
+        fontWeight: '500',
+    },
+    // Контейнер для індикатора стану мікрофона (для налагодження)
+    micStatusContainer: {
+        position: 'absolute',
+        top: 10,
+        alignSelf: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 10,
+        zIndex: 15,
+    },
+    micStatusText: {
+        color: 'white',
+        fontSize: 12,
+        fontWeight: 'bold',
     },
 });
