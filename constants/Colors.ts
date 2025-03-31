@@ -7,6 +7,7 @@ const Colors = {
   light: {
     purple: {
       100: '#B88FC900', // Transparent light purple
+      200: '#30173B',
       400: '#B88FC9',   // Mid-deep purple
       600: '#CBA3DB',   // Mid-tone purple
       800: '#E6D3EE',   // Very light purple
@@ -21,6 +22,9 @@ const Colors = {
     },
     red: {
       950: '#FF6B81'    // Pinkish-red
+    },
+    black: {
+      100: '#4D4D4D'
     }
   },
 };
@@ -30,6 +34,7 @@ export const TailwindColors = {
   white: Colors.light.white,
   green: Colors.light.green,
   red: Colors.light.red,
+  black: Colors.light.black,
 };
 
 export default Colors;

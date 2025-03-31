@@ -6,7 +6,7 @@ import Gradient from './Gradient';
 export type ButtonProps = {
     children: ReactNode;
     size?: 'xs' | 'sm' | 'md' | 'md_wide' | 'lg' | 'xl' | 'xxl';
-    color?: 'primary' | 'secondary' | 'danger';
+    color?: 'primary' | 'secondary' | 'third';
     onPress?: () => void;
     className?: string;
     textClassName?: string;
@@ -81,7 +81,7 @@ export function Button({
         ${size === 'xxl' ? 'w-[344px] h-[40px] rounded-[8px] shadow-sm' : ''}
         ${color === 'primary' ? 'bg-purple-950' : ''}
         ${color === 'secondary' ? 'bg-white-950' : ''}
-        ${color === 'danger' ? 'transparent' : ''}
+        ${color === 'third' ? 'bg-purple-800' : ''}
         ${className ? className : 'flex-row items-center justify-center'}
     `;
 
@@ -145,7 +145,7 @@ export function Button({
             activeOpacity={0.8}
             className={buttonClasses}
             style={[
-                (size === 'md' || size === 'xl' || size === 'xxl') && {
+                (size === 'md' || size === 'xl' || size === 'xxl' || 'xs' || 'xs') && {
                     shadowColor: "#000000",
                     shadowOffset: { width: 0, height: 2 },
                     shadowOpacity: 0.14,
