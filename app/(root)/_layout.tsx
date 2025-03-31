@@ -11,6 +11,8 @@ export default function AppLayout() {
     useEffect(() => {
         const checkLoginStatus = async () => {
             try {
+                //await AsyncStorage.removeItem("isTestLoggedIn");
+
                 const storedLogin = await AsyncStorage.getItem("isTestLoggedIn");
                 setIsLoggedIn(storedLogin === "true");
                 setIsLoading(false);
