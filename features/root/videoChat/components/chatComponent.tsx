@@ -1,10 +1,11 @@
-import React, {useState} from 'react';
-import {View} from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, ScrollView } from 'react-native';
 import Play from "@/assets/images/icons/play";
-import {ThemedText} from "@/components/ThemedText";
+import { ThemedText } from "@/components/ThemedText";
 import Sound from "@/assets/images/icons/sound";
 
-type MessageType = {
+// Експортуємо тип, щоб його можна було використовувати в інших компонентах
+export type MessageType = {
     id: number;
     text?: string;
     type?: 'text' | 'audio';
@@ -13,30 +14,25 @@ type MessageType = {
     duration?: string;
 };
 
-const ChatComponent = () => {
-    const [messages] = useState<MessageType[]>([
-        {
-            id: 1,
-            text: "Tell me how look after flowers",
-            type: 'text',
-            sender: "user",
-            time: "16.46"
-        },
-        {
-            id: 2,
-            text: "Yeah! Processing information....",
-            type: 'text',
-            sender: "assistant",
-            time: "16.46"
-        },
-        {
-            id: 3,
-            type: "audio",
-            duration: "0:20",
-            sender: "user",
-            time: "16.46"
-        }
-    ]);
+// Додаємо пропси для отримання повідомлень ззовні
+interface ChatComponentProps {
+    messages: MessageType[];
+}
+
+const ChatComponent = ({ messages }: ChatComponentProps) => {
+
+    // Створюємо ref для ScrollView
+    const scrollViewRef = useRef<ScrollView>(null);
+
+    // Ефект для автоматичної прокрутки при зміні повідомлень
+    useEffect(() => {
+        // Невелика затримка, щоб дати час на рендеринг нових повідомлень
+        setTimeout(() => {
+            if (scrollViewRef.current) {
+                scrollViewRef.current.scrollToEnd({ animated: true });
+            }
+        }, 100);
+    }, [messages]); // Запускаємо ефект при зміні повідомлень
 
     const renderMessage = (message: MessageType) => {
         const isUser = message.sender === 'user';
@@ -52,7 +48,7 @@ const ChatComponent = () => {
                             isUser
                                 ? isAudio
                                     ? 'bg-purple-950 px-2 w-[164px] h-[37px] rounded' // User audio message dimensions
-                                    : 'bg-purple-950 px-2 w-[209px] h-[44px] rounded-br-none' // User text message dimensions
+                                    : 'bg-purple-950 px-2 max-w-[209px] h-[44px] rounded-br-none' // User text message dimensions
                                 : 'border border-purple-800 px-2 w-[232px] h-[44px] rounded-bl-none' // Assistant message dimensions
                         }`}
                     >
@@ -96,9 +92,14 @@ const ChatComponent = () => {
     };
 
     return (
-        <View className="flex gap-y-3">
+        <ScrollView
+            ref={scrollViewRef}
+            className="flex h-[240px]" // Додаємо фіксовану висоту для ScrollView
+            showsVerticalScrollIndicator={false} // Можна приховати індикатор прокрутки для кращого вигляду
+            contentContainerStyle={{ gap: 12 }} // Додаємо відступи між повідомленнями
+        >
             {messages.map(message => renderMessage(message))}
-        </View>
+        </ScrollView>
     );
 }
 

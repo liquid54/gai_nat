@@ -5,7 +5,8 @@ import WhiteMicro from "@/assets/images/icons/whiteMicro";
 import Keyboard from "@/assets/images/icons/keyboard";
 import { useRouter } from "expo-router";
 
-const InputToolbar = () => {
+// Додаємо параметр onKeyboardPress для обробки натискання на кнопку клавіатури
+const InputToolbar = ({ onKeyboardPress }: { onKeyboardPress: () => void }) => {
     const router = useRouter();
 
     const handleAudioCallPress = () => {
@@ -22,7 +23,13 @@ const InputToolbar = () => {
             >
                 <WhiteMicro/>
             </Button>
-            <Button size='sm' color='third'><Keyboard/></Button>
+            <Button
+                size='sm'
+                color='third'
+                onPress={onKeyboardPress}  // Додаємо обробник натискання
+            >
+                <Keyboard/>
+            </Button>
         </View>
     );
 };

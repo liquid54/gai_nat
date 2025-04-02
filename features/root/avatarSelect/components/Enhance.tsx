@@ -1,22 +1,40 @@
-import {View, Text, ScrollView} from "react-native";
+import {View, ScrollView} from "react-native";
 import AvatarOption from "@/features/root/avatarSelect/components/AvatarSelect";
 import {ThemedText} from "@/components/ThemedText";
+import {AVATARS} from "@/features/root/avatarSelect/constants/constants";
+import {AvatarOption as AvatarOptionType} from "@/features/root/avatarSelect/constants/constants";
+import {useState, useEffect} from "react";
 
 const Enhance = () => {
-    // Створюємо масив з 9 елементів
-    const avatarOptions = Array.from({ length: 9 }, (_, index) => ({
-        id: `avatar-${index + 1}`
-    }));
+    // State to track selected avatar - default to first avatar
+    const [selectedAvatar, setSelectedAvatar] = useState<AvatarOptionType>(AVATARS[0]);
+
+    // Handler for selecting an avatar
+    const handleSelectAvatar = (avatar: AvatarOptionType) => {
+        setSelectedAvatar(avatar);
+        // Log the selected avatar name and id to console
+        console.log(`Selected avatar: ${avatar.name}, ID: ${avatar.avatar_id}`);
+    };
+
+    // Log the initially selected avatar
+    useEffect(() => {
+        if (selectedAvatar) {
+            console.log(`Initially selected avatar: ${selectedAvatar.name}, ID: ${selectedAvatar.avatar_id}`);
+        }
+    }, []);
 
     return (
         <View className='gap-y-7'>
             <ThemedText type='title_avatar_option'>Enhance</ThemedText>
-            <View>
+            <View className='flex overflow-hidden max-h-[352px]'>
                 <ScrollView showsVerticalScrollIndicator={false}>
                     <View className="flex-row gap-2 flex-wrap justify-between">
-                        {avatarOptions.map((option) => (
+                        {AVATARS.map((avatar) => (
                             <AvatarOption
-                                key={option.id}
+                                key={avatar.avatar_id}
+                                avatar={avatar}
+                                isSelected={selectedAvatar?.avatar_id === avatar.avatar_id}
+                                onSelect={handleSelectAvatar}
                             />
                         ))}
                     </View>
