@@ -44,7 +44,7 @@ export const gradients: Record<GradientType, GradientConfig> = {
         ],
         start: { x: 0, y: 0 },
         end: { x: 1, y: 0 },
-        locations: [-0.2814, 0.0048, 0.3845, 0.9338], // Відкориговані значення відповідно до оригіналу
+        locations: [-0.2814, 0.0048, 0.3845, 0.9338],
         angle: 97.1,
     },
 };

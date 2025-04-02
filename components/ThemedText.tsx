@@ -13,10 +13,19 @@ export type textEnum =
     | 'text_button_md'
     | 'text_button_xs'
     | 'text_card'
+    | 'title_date'
+    | 'text_dialog_request'
+    | 'text_dialog_answer'
     | 'text'
+    | 'text_ai_dark'
+    | 'text_ai_light'
     | 'adress_text'
     | 'intro_text'
     | 'gradient_text'
+    | 'time_request_in'
+    | 'time_answer_in'
+    | 'time_request_out'
+    | 'text_timing'
     | 'text_link'
     | 'text_link_underlined'
     | 'body_small'
@@ -49,7 +58,19 @@ export function ThemedText({type = 'text', className = 'flex ', ...rest}: Themed
 
         ${type === 'text_card' ? 'text-[12px] leading-[16px] font-Roboto text-black-100 tracking-[0.5px]' : ''}
         
+        ${type === 'title_date' ? 'text-[12px] leading-[16px] font-Urbanist text-purple-600 tracking-normal' : ''}
         
+        ${type === 'text_dialog_request' ? 'text-[14px] leading-[20px] font-Mulish text-white-950 tracking-normal' : ''}
+        ${type === 'text_dialog_answer' ? 'text-[14px] leading-[20px] font-Mulish text-purple-200 tracking-normal' : ''}
+        ${type === 'time_request_in' ? 'text-[10px] leading-[16px] font-Lato text-purple-800 tracking-normal' : ''}
+        ${type === 'time_answer_in' ? 'text-[10px] leading-[16px] font-Lato text-purple-600 tracking-normal' : ''}
+        ${type === 'time_request_out' ? 'text-[10px] leading-[16px] font-Roboto text-purple-600 tracking-normal' : ''}
+        
+        ${type === 'text_timing' ? 'text-[10px] leading-[16px] font-Mulish text-purple-600 tracking-normal' : ''}
+        
+        ${type === 'text_ai_dark' ? 'text-[15px] leading-[24px] font-Urbanist-Medium text-purple-950 tracking-normal' : ''}
+        ${type === 'text_ai_light' ? 'text-[15px] leading-[24px] font-Urbanist text-purple-600 tracking-normal' : ''}
+
 
         ${type === 'text_link_underlined' ? 'text-[14px] font-Roboto leading-[20px] tracking-normal text-purple-950 underline decoration-solid decoration-purple-950' : ''}
         ${type === 'text_link' ? 'text-[14px] leading-[100%] font-Roboto text-purple-950 tracking-normal' : ''}

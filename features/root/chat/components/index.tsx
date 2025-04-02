@@ -9,6 +9,7 @@ import Emoji from "@/assets/images/icons/emoji";
 import Input from "@/components/Input";
 import Add from "@/assets/images/icons/add";
 import WhiteMicro from "@/assets/images/icons/whiteMicro";
+import Gradient from "@/components/Gradient";
 
 const Chat = () => {
     return (
@@ -19,7 +20,10 @@ const Chat = () => {
                     <ThemedText type='adress_text'>Hello, Mary!</ThemedText>
                     <ThemedText type='intro_text'>How can I help you today?</ThemedText>
                 </View>
-                <View className="w-[182px] h-[182px] rounded-full bg-purple-600">
+                {/*<View className="w-[182px] h-[182px] rounded-full bg-purple-600">*/}
+                {/*</View>*/}
+                <View className='rounded-full overflow-hidden'>
+                    <Gradient className='w-[182px] h-[182px]' type='multicolor'/>
                 </View>
             </View>
             <View className="flex-1" />

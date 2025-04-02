@@ -28,12 +28,12 @@ interface GradientProps {
 /**
  * Компонент для відображення градієнтного фону з предвизначеними конфігураціями
  */
-export const Gradient: React.FC<GradientProps> = ({
-                                                      type = 'primary',
-                                                      children,
-                                                      style,
-                                                      className
-                                                  }) => {
+export const Gradient = ({
+                             type = 'primary',
+                             children,
+                             style,
+                             className
+                         }: GradientProps) => {
 
     const gradientConfig = gradients[type];
 

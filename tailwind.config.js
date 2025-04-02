@@ -21,10 +21,14 @@ module.exports = {
         'Urbanist-Medium': ['Urbanist-Medium', 'sans-serif'],
         Mulish: ['Mulish-Regular', 'sans-serif'],
         'Mulish-Light': ['Mulish-Light', 'sans-serif'],
+        Lato: ['Lato-Regular', 'sans-serif']
       },
       colors: {
         ...TailwindColors
       },
+      boxShadow: {
+        '3xl': '2px 2px 8px 0px #00000033',
+      }
     },
   },
   plugins: [],
