@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {View, Text} from 'react-native';
+import {View} from 'react-native';
 import Play from "@/assets/images/icons/play";
 import {ThemedText} from "@/components/ThemedText";
 import Sound from "@/assets/images/icons/sound";

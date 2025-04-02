@@ -1,6 +1,5 @@
 import { View } from "react-native";
 import { Button } from "@/components/Button";
-import Close from "@/assets/images/icons/close";
 import Keyboard from "@/assets/images/icons/keyboard";
 import Stop from "@/assets/images/icons/stop";
 import Mute from "@/assets/images/icons/Mute";
