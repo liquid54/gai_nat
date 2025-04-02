@@ -3,6 +3,8 @@ export type AvatarOption = {
     name: string;
 };
 
+
+
 export  const AVATARS: AvatarOption[] = [
     {
         avatar_id: "Anna_public_3_20240108",

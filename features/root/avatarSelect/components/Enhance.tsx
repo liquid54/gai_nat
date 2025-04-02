@@ -3,26 +3,13 @@ import AvatarOption from "@/features/root/avatarSelect/components/AvatarSelect";
 import {ThemedText} from "@/components/ThemedText";
 import {AVATARS} from "@/features/root/avatarSelect/constants/constants";
 import {AvatarOption as AvatarOptionType} from "@/features/root/avatarSelect/constants/constants";
-import {useState, useEffect} from "react";
 
-const Enhance = () => {
-    // State to track selected avatar - default to first avatar
-    const [selectedAvatar, setSelectedAvatar] = useState<AvatarOptionType>(AVATARS[0]);
+interface EnhanceProps {
+    selectedAvatar: AvatarOptionType;
+    onSelectAvatar: (avatar: AvatarOptionType) => void;
+}
 
-    // Handler for selecting an avatar
-    const handleSelectAvatar = (avatar: AvatarOptionType) => {
-        setSelectedAvatar(avatar);
-        // Log the selected avatar name and id to console
-        console.log(`Selected avatar: ${avatar.name}, ID: ${avatar.avatar_id}`);
-    };
-
-    // Log the initially selected avatar
-    useEffect(() => {
-        if (selectedAvatar) {
-            console.log(`Initially selected avatar: ${selectedAvatar.name}, ID: ${selectedAvatar.avatar_id}`);
-        }
-    }, []);
-
+const Enhance = ({ selectedAvatar, onSelectAvatar }: EnhanceProps) => {
     return (
         <View className='gap-y-7'>
             <ThemedText type='title_avatar_option'>Enhance</ThemedText>
@@ -34,7 +21,7 @@ const Enhance = () => {
                                 key={avatar.avatar_id}
                                 avatar={avatar}
                                 isSelected={selectedAvatar?.avatar_id === avatar.avatar_id}
-                                onSelect={handleSelectAvatar}
+                                onSelect={onSelectAvatar}
                             />
                         ))}
                     </View>

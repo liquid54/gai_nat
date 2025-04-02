@@ -1,38 +1,37 @@
-import React, { useEffect, useRef } from 'react';
-import { View, ScrollView } from 'react-native';
+import React, {useEffect, useRef} from 'react';
+import {View, ScrollView} from 'react-native';
 import Play from "@/assets/images/icons/play";
-import { ThemedText } from "@/components/ThemedText";
+import {ThemedText} from "@/components/ThemedText";
 import Sound from "@/assets/images/icons/sound";
 
-// Експортуємо тип, щоб його можна було використовувати в інших компонентах
-export type MessageType = {
+// Eksportuiemo typ, shchob yoho mozhna bulo vykorystovuvaty v inshykh komponentakh
+export interface MessageType {
     id: number;
     text?: string;
     type?: 'text' | 'audio';
     sender: 'user' | 'assistant';
     time: string;
     duration?: string;
-};
+}
 
-// Додаємо пропси для отримання повідомлень ззовні
+// Dodaiemo propsy dlia otrymannia povidomlen zzovni
 interface ChatComponentProps {
     messages: MessageType[];
 }
 
-const ChatComponent = ({ messages }: ChatComponentProps) => {
+const ChatComponent = ({messages}: ChatComponentProps) => {
 
-    // Створюємо ref для ScrollView
+    // Stvoriuiemo ref dlia ScrollView
     const scrollViewRef = useRef<ScrollView>(null);
 
-    // Ефект для автоматичної прокрутки при зміні повідомлень
     useEffect(() => {
-        // Невелика затримка, щоб дати час на рендеринг нових повідомлень
+
         setTimeout(() => {
             if (scrollViewRef.current) {
-                scrollViewRef.current.scrollToEnd({ animated: true });
+                scrollViewRef.current.scrollToEnd({animated: true});
             }
         }, 100);
-    }, [messages]); // Запускаємо ефект при зміні повідомлень
+    }, [messages]);
 
     const renderMessage = (message: MessageType) => {
         const isUser = message.sender === 'user';
@@ -94,9 +93,9 @@ const ChatComponent = ({ messages }: ChatComponentProps) => {
     return (
         <ScrollView
             ref={scrollViewRef}
-            className="flex h-[240px]" // Додаємо фіксовану висоту для ScrollView
-            showsVerticalScrollIndicator={false} // Можна приховати індикатор прокрутки для кращого вигляду
-            contentContainerStyle={{ gap: 12 }} // Додаємо відступи між повідомленнями
+            className="flex h-[240px]"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{gap: 12}}
         >
             {messages.map(message => renderMessage(message))}
         </ScrollView>
