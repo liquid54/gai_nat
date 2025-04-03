@@ -1,4 +1,4 @@
-import {View} from "react-native";
+import {View, Platform} from "react-native";
 import Gradient from "@/components/Gradient";
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import DateComponent from "@/features/root/videoChat/components/date";
@@ -10,14 +10,22 @@ import WhiteMicro from "@/assets/images/icons/whiteMicro";
 import Input from "@/components/Input";
 import Add from "@/assets/images/icons/add";
 import { useRouter } from 'expo-router';
+import { registerGlobals } from "@livekit/react-native";
+import { LiveKitRoom } from "@livekit/react-native";
+import { Audio } from "expo-av";
+import * as FileSystem from 'expo-file-system';
+
+// Register LiveKit globals
+registerGlobals();
 
 // API configuration
 const API_CONFIG = {
-    apiKey: "YTA0OWNjZWVlZjhlNGU4MGFhN2FiMjA5NDM1ZGU0MjktMTc0MTE4MjIwOQ==",
+    apiKey: "ZmVhOGI1ZDhjNTI1NGQ2YjkxZDY3NDM1YjhlMTJmOGEtMTc0MzYyNzQ4Ng==",
     serverUrl: "https://api.heygen.com",
+    openaiApiKey: "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", // Replace with your OpenAI API key
 };
 
-// Ініціалізуємо глобальний стан, якщо він ще не існує
+// Initialize global state if it doesn't exist
 if (!(global as any).chatState) {
     (global as any).chatState = {
         sessionData: null,
@@ -35,7 +43,7 @@ const VideoChat = () => {
         name: "Anna in Brown T-shirt"
     };
 
-    // Session state - використовуємо збережені дані або порожній об'єкт
+    // Session state - use saved data or empty object
     const [sessionData, setSessionData] = useState((global as any).chatState.sessionData || {
         sessionId: "",
         sessionToken: "",
@@ -43,11 +51,19 @@ const VideoChat = () => {
         token: ""
     });
 
-    // Chat state - відновлюємо історію чату, якщо вона існує
+    // Chat state - restore chat history if it exists
     const [showKeyboard, setShowKeyboard] = useState(false);
     const [inputText, setInputText] = useState("");
     const [isProcessing, setIsProcessing] = useState(false);
     const [messages, setMessages] = useState<MessageType[]>((global as any).chatState.chatHistory || []);
+
+    // Voice recording states
+    const [isRecording, setIsRecording] = useState(false);
+    const recording = useRef<Audio.Recording | null>(null);
+    const [isTranscribing, setIsTranscribing] = useState(false);
+
+    // Current selected language
+    const [selectedLanguage, setSelectedLanguage] = useState<string>("uk");
 
     // Get current time in format HH.MM
     const getCurrentTime = () => {
@@ -55,18 +71,39 @@ const VideoChat = () => {
         return `${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')}`;
     };
 
-    // Зберігаємо дані чату при зміні стану
+    // Save chat data when state changes
     useEffect(() => {
         (global as any).chatState.chatHistory = messages;
     }, [messages]);
 
-    // Зберігаємо дані сесії при зміні стану
+    // Save session data when state changes
     useEffect(() => {
         if (sessionData.sessionId) {
             (global as any).chatState.sessionData = sessionData;
             (global as any).chatState.hasActiveSession = true;
         }
     }, [sessionData]);
+
+    // Setup audio recording permissions
+    useEffect(() => {
+        const setupAudio = async () => {
+            // Get audio recording permission
+            const permission = await Audio.requestPermissionsAsync();
+            if (!permission.granted) {
+                console.error("Permission to access audio was denied");
+            }
+
+            // Setup audio mode
+            await Audio.setAudioModeAsync({
+                allowsRecordingIOS: true,
+                playsInSilentModeIOS: true,
+                shouldDuckAndroid: true,
+                playThroughEarpieceAndroid: false,
+            });
+        };
+
+        setupAudio();
+    }, []);
 
     // Get session token
     const getSessionToken = async () => {
@@ -216,7 +253,7 @@ const VideoChat = () => {
 
             console.log("Session closed successfully");
 
-            // Очищаємо глобальний стан після закриття сесії
+            // Clear global state after closing session
             (global as any).chatState.sessionData = null;
             (global as any).chatState.hasActiveSession = false;
         } catch (error) {
@@ -286,7 +323,7 @@ const VideoChat = () => {
     // Initialize API connection on component mount
     useEffect(() => {
         const initializeSession = async () => {
-            // Перевіряємо, чи у нас вже є активна сесія
+            // Check if we already have an active session
             if ((global as any).chatState.hasActiveSession && (global as any).chatState.sessionData) {
                 console.log("Using existing session:", (global as any).chatState.sessionData.sessionId);
                 setSessionData((global as any).chatState.sessionData);
@@ -344,23 +381,150 @@ const VideoChat = () => {
 
         initializeSession();
 
-        // Cleanup on unmount компонента
+        // Cleanup on component unmount
         return () => {
-            // Не закриваємо сесію при виході з компонента, щоб зберегти її для наступних відвідувань
+            // Don't close session when exiting component to preserve it for future visits
             // closeSession();
         };
     }, []);
 
-    // Send message function - using direct redirection approach
-    const sendMessage = useCallback(async () => {
-        if (!inputText.trim() || !sessionData.sessionId) return;
+    // Voice recording functions
+    const startRecording = async () => {
+        try {
+            setIsRecording(true);
+
+            // Setup for recording
+            const options = {
+                android: {
+                    extension: '.m4a',
+                    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+                    audioEncoder: Audio.AndroidAudioEncoder.AAC,
+                    sampleRate: 16000,
+                    numberOfChannels: 1,
+                    bitRate: 32000,
+                },
+                ios: Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
+                web: {
+                    mimeType: 'audio/webm',
+                    bitsPerSecond: 128000,
+                },
+            };
+
+            console.log("Starting voice recording...");
+            const { recording: newRecording } = await Audio.Recording.createAsync(options);
+            recording.current = newRecording;
+
+        } catch (error) {
+            console.error("Error starting recording:", error);
+            setIsRecording(false);
+        }
+    };
+
+    const stopRecording = async () => {
+        if (!recording.current) {
+            setIsRecording(false);
+            return;
+        }
+
+        try {
+            console.log("Stopping recording...");
+            await recording.current.stopAndUnloadAsync();
+            const uri = recording.current.getURI();
+            recording.current = null;
+            setIsRecording(false);
+
+            if (uri) {
+                // Transcribe the recorded audio
+                await transcribeAudio(uri);
+            }
+        } catch (error) {
+            console.error("Error stopping recording:", error);
+            setIsRecording(false);
+        }
+    };
+
+    const transcribeAudio = async (audioUri: string) => {
+        try {
+            setIsTranscribing(true);
+
+            // Get file info
+            const fileInfo = await FileSystem.getInfoAsync(audioUri);
+            if (!fileInfo.exists || !fileInfo.size || fileInfo.size <= 1000) {
+                console.log("Audio file is too small or does not exist");
+                setIsTranscribing(false);
+                return;
+            }
+
+            console.log("Audio file size:", `${(fileInfo.size / 1024).toFixed(2)} KB`);
+
+            // Create FormData for OpenAI API
+            const formData = new FormData();
+            formData.append('file', {
+                uri: audioUri,
+                type: 'audio/mp4',
+                name: 'recording.m4a',
+            } as any);
+            formData.append('model', 'whisper-1');
+            formData.append('language', selectedLanguage);
+
+            console.log("Sending audio to OpenAI for transcription...");
+
+            // Send to OpenAI API
+            const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${API_CONFIG.openaiApiKey}`,
+                },
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json();
+            console.log("Transcription result:", data);
+
+            if (data?.text) {
+                const transcribedText = data.text.trim();
+                console.log("Transcribed text:", transcribedText);
+
+                // Set the transcribed text as input
+                setInputText(transcribedText);
+
+                // Automatically send the transcribed text
+                if (transcribedText) {
+                    await sendMessage(transcribedText);
+                }
+            }
+
+        } catch (error) {
+            console.error("Error transcribing audio:", error);
+        } finally {
+            setIsTranscribing(false);
+        }
+    };
+
+    // Handle voice button press
+    const handleVoiceButtonPress = async () => {
+        if (isRecording) {
+            await stopRecording();
+        } else {
+            await startRecording();
+        }
+    };
+
+    // Send message function - with handling right in the chat, without redirect
+    const sendMessage = useCallback(async (textToSend = inputText) => {
+        if (!textToSend.trim() || !sessionData.sessionId) return;
 
         const timeString = getCurrentTime();
 
         // Add user message to chat
         const newMessage: MessageType = {
             id: globalThis.Date.now(),
-            text: inputText,
+            text: textToSend,
             type: 'text',
             sender: 'user',
             time: timeString
@@ -369,16 +533,16 @@ const VideoChat = () => {
         setMessages(prev => [...prev, newMessage]);
 
         // Log the request
-        console.log("User message:", inputText);
+        console.log("User message:", textToSend);
 
         // Clear input
         setInputText("");
 
-        // Add processing message
+        // Add processing message with the new text
         setIsProcessing(true);
         const processingMessage: MessageType = {
             id: globalThis.Date.now() + 1,
-            text: "Так... Обробка інформації",
+            text: "Хм... зараз подумаю",
             type: 'text',
             sender: 'assistant',
             time: timeString
@@ -387,64 +551,41 @@ const VideoChat = () => {
         setMessages(prev => [...prev, processingMessage]);
 
         try {
-            // Store minimal data needed for audioCall
-            (global as any).audioCallData = {
-                sessionData: {
-                    sessionId: sessionData.sessionId,
-                    sessionToken: sessionData.sessionToken,
-                    wsUrl: sessionData.wsUrl,
-                    token: sessionData.token
-                },
-                responseText: "Відповідь обробляється...",
-                avatarData: selectedAvatar,
-                returnToChat: true // Додаємо прапорець для повернення в чат
-            };
+            // Send request to API
+            console.log("Sending API request...");
+            const apiResponse = await sendMessageToAPI(textToSend);
+            setIsProcessing(false);
 
-            // Redirect to audioCall BEFORE sending to API
-            // This ensures we get audio on the audioCall page
-            console.log("Redirecting to audioCall to prepare for audio playback");
-            router.push("/audioCall");
+            // Get response and update message
+            if (apiResponse && apiResponse.data) {
+                // If there's a response text, update the message in the chat
+                if (apiResponse.data.text) {
+                    console.log("Updated response text:", apiResponse.data.text);
 
-            // API call happens in background and will update audioCall directly
-            setTimeout(async () => {
-                try {
-                    console.log("Sending API request from background...");
-                    const apiResponse = await sendMessageToAPI(inputText);
-
-                    // Update global data for audioCall to access
-                    if (apiResponse && apiResponse.data) {
-                        // Якщо є текст відповіді, оновлюємо його
-                        if (apiResponse.data.text) {
-                            (global as any).audioCallData.responseText = apiResponse.data.text;
-                            console.log("Updated response text for audioCall:", apiResponse.data.text);
-
-                            // Також оновлюємо відповідь в історії чату
-                            const updatedMessages = [...(global as any).chatState.chatHistory];
-                            const processingIndex = updatedMessages.findIndex(
-                                msg => msg.id === processingMessage.id
-                            );
-
-                            if (processingIndex !== -1) {
-                                updatedMessages[processingIndex] = {
-                                    ...updatedMessages[processingIndex],
-                                    text: apiResponse.data.text
-                                };
-                                (global as any).chatState.chatHistory = updatedMessages;
-                            }
-                        }
-
-                        // Оновлюємо інші дані відповіді
-                        (global as any).audioCallData.apiResponse = apiResponse.data;
-                    }
-                } catch (e) {
-                    console.error("Background API request failed:", e);
+                    // Update message in chat
+                    setMessages(prev =>
+                        prev.map(msg =>
+                            msg.id === processingMessage.id
+                                ? { ...msg, text: apiResponse.data.text || "Отримано відповідь" }
+                                : msg
+                        )
+                    );
                 }
-            }, 500);
+            }
         } catch (error) {
             console.error("Error in message handling:", error);
             setIsProcessing(false);
+
+            // Show error in chat
+            setMessages(prev =>
+                prev.map(msg =>
+                    msg.id === processingMessage.id
+                        ? { ...msg, text: "Виникла помилка при обробці запиту" }
+                        : msg
+                )
+            );
         }
-    }, [inputText, sessionData, messages, router]);
+    }, [inputText, sessionData, messages]);
 
     return (
         <>
@@ -452,6 +593,7 @@ const VideoChat = () => {
             <View className='pt-[74px] pb-[26px] flex-1'>
                 <View className='flex mx-auto pb-[40px]'>
                     <View className='flex overflow-hidden rounded-full'>
+                        {/* Avatar Display */}
                         <Gradient className='w-[182px] h-[182px]' type='multicolor'/>
                     </View>
                 </View>
@@ -469,20 +611,56 @@ const VideoChat = () => {
                                 icon={<Add/>}
                                 value={inputText}
                                 onChangeText={setInputText}
-                                onSubmitEditing={sendMessage}
+                                onSubmitEditing={() => sendMessage()}
                             />
                             <Button
                                 size='sm'
-                                onPress={() => setShowKeyboard(false)}
+                                onPress={() => {
+                                    setShowKeyboard(false);
+                                }}
                             >
                                 <WhiteMicro/>
                             </Button>
                         </View>
                     ) : (
-                        <InputToolbar onKeyboardPress={() => setShowKeyboard(true)} />
+                        <View className='flex-row items-center justify-center gap-x-4'>
+                            <InputToolbar onKeyboardPress={() => setShowKeyboard(true)} />
+
+                            {/* Voice input button */}
+                            <Button
+                                size='sm'
+                                color={isRecording ? 'primary' : 'secondary'}
+                                onPress={handleVoiceButtonPress}
+                            >
+                                <WhiteMicro/>
+                            </Button>
+                        </View>
                     )}
                 </View>
             </View>
+
+            {/* LiveKit Room for audio playback */}
+            {sessionData.wsUrl && sessionData.token && (
+                <LiveKitRoom
+                    serverUrl={sessionData.wsUrl}
+                    token={sessionData.token}
+                    connect={true}
+                    options={{
+                        adaptiveStream: {pixelDensity: "screen"},
+                        audioCaptureDefaults: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        },
+                        publishDefaults: {
+                            dtx: true,
+                            red: true,
+                        },
+                    }}
+                    audio={false} // No microphone needed
+                    video={true} // No video needed
+                />
+            )}
         </>
     );
 };
