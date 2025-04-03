@@ -11,7 +11,8 @@ import Input from "@/components/Input";
 import Add from "@/assets/images/icons/add";
 import { useRouter } from 'expo-router';
 import { registerGlobals } from "@livekit/react-native";
-import { LiveKitRoom } from "@livekit/react-native";
+import { LiveKitRoom, VideoTrack, useTracks, isTrackReference } from "@livekit/react-native";
+import { Track } from "livekit-client";
 import { Audio } from "expo-av";
 import * as FileSystem from 'expo-file-system';
 
@@ -33,6 +34,77 @@ if (!(global as any).chatState) {
         hasActiveSession: false
     };
 }
+
+// Компонент для LiveKit
+const LiveKitComponent = ({
+                              sessionData,
+                              children
+                          }) => {
+    const [isConnected, setIsConnected] = useState(false);
+
+    // Handler for LiveKit connection
+    const handleConnected = () => {
+        console.log("LiveKit connected successfully");
+        setIsConnected(true);
+    };
+
+    if (!sessionData.wsUrl || !sessionData.token) {
+        return children;
+    }
+
+    return (
+        <LiveKitRoom
+            serverUrl={sessionData.wsUrl}
+            token={sessionData.token}
+            connect={true}
+            options={{
+                adaptiveStream: {pixelDensity: "screen"},
+                audioCaptureDefaults: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                },
+                publishDefaults: {
+                    dtx: true,
+                    red: true,
+                },
+            }}
+            audio={false} // No microphone needed
+            video={true} // Enable video for avatar display
+            onConnected={handleConnected}
+        >
+            {children}
+        </LiveKitRoom>
+    );
+};
+
+// Компонент для відображення аватара
+const AvatarDisplay = () => {
+    const videoTracks = useTracks([Track.Source.Camera, Track.Source.Unknown], {
+        onlySubscribed: true
+    });
+
+    return (
+        <View className='flex overflow-hidden rounded-full w-[182px] h-[182px]'>
+            {videoTracks.length > 0 ? (
+                // Відображаємо відеотрек аватара
+                videoTracks.map((track, index) =>
+                    isTrackReference(track) ? (
+                        <VideoTrack
+                            key={index}
+                            trackRef={track}
+                            style={{width: 182, height: 182, borderRadius: 91}}
+                            objectFit="cover"
+                        />
+                    ) : null
+                )
+            ) : (
+                // Показуємо градієнт як заповнювач, поки відео не завантажиться
+                <Gradient className='w-[182px] h-[182px]' type='multicolor'/>
+            )}
+        </View>
+    );
+};
 
 const VideoChat = () => {
     const router = useRouter();
@@ -556,22 +628,78 @@ const VideoChat = () => {
             const apiResponse = await sendMessageToAPI(textToSend);
             setIsProcessing(false);
 
-            // Get response and update message
-            if (apiResponse && apiResponse.data) {
-                // If there's a response text, update the message in the chat
-                if (apiResponse.data.text) {
-                    console.log("Updated response text:", apiResponse.data.text);
+            console.log("--------- RESPONSE PROCESSING ---------");
+            console.log("API Response received:", apiResponse ? "yes" : "no");
 
-                    // Update message in chat
+            // Get response and update message
+            if (apiResponse) {
+                console.log("Response code:", apiResponse.code);
+
+                if (apiResponse.data) {
+                    console.log("Response contains data object");
+                    console.log("Data object keys:", Object.keys(apiResponse.data));
+
+                    // Виводимо всі ключі та їх значення з відповіді
+                    for (const key in apiResponse.data) {
+                        const value = apiResponse.data[key];
+                        const displayValue = typeof value === 'string' ? value : JSON.stringify(value);
+                        console.log(`${key}:`, displayValue);
+                    }
+
+                    // Перевіряємо наявність тексту відповіді
+                    if ('text' in apiResponse.data) {
+                        console.log("--------- AVATAR RESPONSE TEXT ---------");
+                        console.log(apiResponse.data.text);
+                        console.log("-----------------------------------------");
+
+                        // Оновлюємо повідомлення в чаті
+                        setMessages(prev =>
+                            prev.map(msg =>
+                                msg.id === processingMessage.id
+                                    ? { ...msg, text: apiResponse.data.text || "Отримано відповідь" }
+                                    : msg
+                            )
+                        );
+                    } else {
+                        console.log("No 'text' field found in response data");
+
+                        // Записуємо цілу відповідь до консолі
+                        console.log("Full response data:", JSON.stringify(apiResponse.data, null, 2));
+
+                        // Оновлюємо повідомлення з інформацією про відсутність тексту
+                        setMessages(prev =>
+                            prev.map(msg =>
+                                msg.id === processingMessage.id
+                                    ? { ...msg, text: "Отримано відповідь без тексту" }
+                                    : msg
+                            )
+                        );
+                    }
+                } else {
+                    console.log("No data in response");
+
+                    // Оновлюємо повідомлення з інформацією про помилку
                     setMessages(prev =>
                         prev.map(msg =>
                             msg.id === processingMessage.id
-                                ? { ...msg, text: apiResponse.data.text || "Отримано відповідь" }
+                                ? { ...msg, text: "Отримано неповну відповідь від сервера" }
                                 : msg
                         )
                     );
                 }
+            } else {
+                console.log("No response received or response is null");
+
+                // Оновлюємо повідомлення з інформацією про помилку
+                setMessages(prev =>
+                    prev.map(msg =>
+                        msg.id === processingMessage.id
+                            ? { ...msg, text: "Не вдалося отримати відповідь від сервера" }
+                            : msg
+                    )
+                );
             }
+            console.log("------------------------------------");
         } catch (error) {
             console.error("Error in message handling:", error);
             setIsProcessing(false);
@@ -587,15 +715,20 @@ const VideoChat = () => {
         }
     }, [inputText, sessionData, messages]);
 
-    return (
+    // Визначаємо вміст для відображення
+    const renderContent = () => (
         <>
             <Header/>
             <View className='pt-[74px] pb-[26px] flex-1'>
                 <View className='flex mx-auto pb-[40px]'>
-                    <View className='flex overflow-hidden rounded-full'>
-                        {/* Avatar Display */}
-                        <Gradient className='w-[182px] h-[182px]' type='multicolor'/>
-                    </View>
+                    {/* Заміна Gradient на компонент Avatar або показ градієнту */}
+                    {sessionData.wsUrl && sessionData.token ? (
+                        <AvatarDisplay />
+                    ) : (
+                        <View className='flex overflow-hidden rounded-full'>
+                            <Gradient className='w-[182px] h-[182px]' type='multicolor'/>
+                        </View>
+                    )}
                 </View>
                 <View className='px-4 flex-1 gap-y-[15px]'>
                     <DateComponent/>
@@ -638,30 +771,14 @@ const VideoChat = () => {
                     )}
                 </View>
             </View>
-
-            {/* LiveKit Room for audio playback */}
-            {sessionData.wsUrl && sessionData.token && (
-                <LiveKitRoom
-                    serverUrl={sessionData.wsUrl}
-                    token={sessionData.token}
-                    connect={true}
-                    options={{
-                        adaptiveStream: {pixelDensity: "screen"},
-                        audioCaptureDefaults: {
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true
-                        },
-                        publishDefaults: {
-                            dtx: true,
-                            red: true,
-                        },
-                    }}
-                    audio={false} // No microphone needed
-                    video={true} // No video needed
-                />
-            )}
         </>
+    );
+
+    // Повертаємо компонент з обгорткою LiveKitRoom
+    return (
+        <LiveKitComponent sessionData={sessionData}>
+            {renderContent()}
+        </LiveKitComponent>
     );
 };
 
